@@ -65,3 +65,4 @@ data/               # SQLite database (gitignored)
 ## License
 
 Private — all rights reserved.
+
