@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import fs from 'fs';
 import path from 'path';
 
@@ -9,18 +9,17 @@ const DB_PATH = (() => {
   return path.resolve(base, '../../data/kickiqlucas.db');
 })();
 
-let db: Database.Database | null = null;
+let db: Database | null = null;
 
-export function getDb(): Database.Database {
+export function getDb(): Database {
   if (!db) {
     const dir = path.dirname(DB_PATH);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-
     db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
-    db.pragma('foreign_keys = ON');
+    db.run('PRAGMA journal_mode = WAL');
+    db.run('PRAGMA foreign_keys = ON');
   }
   return db;
 }
