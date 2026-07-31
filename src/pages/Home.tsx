@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiCall, ApiError } from '../lib/api';
 import { formatPercentage, formatMs } from '../lib/utils';
-import { useAuth } from '../contexts/AuthContext';
 
 interface AthleteOption {
   id: string;
@@ -77,7 +76,14 @@ function timeAgo(dateStr: string): string {
 }
 
 function hashLabel(hash: string): string {
-  return hash === 'left' ? 'Left Hash' : hash === 'center' ? 'Middle' : 'Right Hash';
+  const map: Record<string, string> = {
+    left_hash: 'Left Hash',
+    left_middle: 'Left Middle',
+    middle: 'Middle',
+    right_middle: 'Right Middle',
+    right_hash: 'Right Hash',
+  };
+  return map[hash] || hash;
 }
 
 function missTypeLabel(type: string): string {
@@ -104,7 +110,6 @@ function sessionTypeLabel(type: string): string {
 }
 
 export default function Home() {
-  const { user } = useAuth();
   const navigate = useNavigate();
 
   const [athletes, setAthletes] = useState<AthleteOption[]>([]);
@@ -184,12 +189,10 @@ export default function Home() {
 
   return (
     <div className="px-4 py-6 max-w-lg mx-auto space-y-5">
-      {/* Greeting + Athlete selector */}
+      {/* Header + Athlete selector */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">
-            Welcome, {user?.name?.split(' ')[0] || 'Coach'}
-          </h2>
+          <h2 className="text-xl font-bold text-brand-700">KickIQ</h2>
           <p className="text-sm text-gray-500 mt-0.5">
             {selectedAthlete
               ? `${selectedAthlete.first_name} ${selectedAthlete.last_name}`
@@ -351,13 +354,23 @@ export default function Home() {
           </div>
 
           {/* --- Quick Actions --- */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Quick Actions</h3>
-
+          <div>
             <button
               onClick={() => {
                 if (selectedAthleteId) {
-                  navigate(`/record?athlete=${selectedAthleteId}`);
+                  // Create session instantly and navigate
+                  apiCall<{ id: string }>('/api/sessions', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      athlete_id: selectedAthleteId,
+                      type: 'practice',
+                    }),
+                  }).then((data) => {
+                    sessionStorage.setItem('kickiq_active_session', data.id);
+                    navigate('/record');
+                  }).catch(() => {
+                    navigate(`/record?athlete=${selectedAthleteId}`);
+                  });
                 } else {
                   navigate('/record');
                 }
@@ -368,31 +381,7 @@ export default function Home() {
                 <circle cx="12" cy="12" r="9" strokeWidth={2} />
                 <circle cx="12" cy="12" r="4" fill="currentColor" />
               </svg>
-              Start Session
-            </button>
-
-            <button
-              disabled
-              className="btn-secondary w-full text-sm flex items-center justify-center gap-2 opacity-50 cursor-not-allowed"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-              Upload Sheet
-              <span className="text-xs ml-1">(Coming Soon)</span>
-            </button>
-
-            <button
-              disabled
-              className="btn-secondary w-full text-sm flex items-center justify-center gap-2 opacity-50 cursor-not-allowed"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              Game-Day Tool
-              <span className="text-xs ml-1">(Coming Soon)</span>
+              New Session
             </button>
           </div>
         </>
