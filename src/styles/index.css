@@ -21,29 +21,78 @@
 
 @layer components {
   .btn-primary {
-    @apply bg-brand-700 text-white font-semibold rounded-lg
-           min-h-touch min-w-touch px-5 py-3
+    @apply bg-brand-700 text-white font-semibold rounded
+           min-h-touch min-w-touch px-4 py-2.5
            active:bg-brand-800 transition-colors
            disabled:opacity-50 disabled:pointer-events-none
            focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2;
   }
 
   .btn-secondary {
-    @apply bg-gray-100 text-gray-800 font-semibold rounded-lg
-           min-h-touch min-w-touch px-5 py-3
+    @apply bg-gray-100 text-gray-800 font-semibold rounded
+           min-h-touch min-w-touch px-4 py-2.5
            active:bg-gray-200 transition-colors
            disabled:opacity-50 disabled:pointer-events-none
            focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2;
   }
 
   .card {
-    @apply bg-white rounded-xl border border-gray-200 shadow-sm p-4;
+    @apply bg-white border border-gray-200 p-3;
   }
 
   .input-field {
-    @apply w-full rounded-lg border border-gray-300 px-4 py-3
+    @apply w-full rounded border border-gray-300 px-3 py-2.5
            min-h-touch text-gray-900 bg-white
            focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500
            placeholder:text-gray-400;
+  }
+
+  /* Data table styles — spreadsheet feel */
+  .data-table {
+    @apply w-full text-sm border-collapse;
+  }
+
+  .data-table th {
+    @apply text-left font-semibold text-gray-500 text-xs uppercase tracking-wider
+           bg-gray-50 border-b border-gray-200 px-3 py-2
+           cursor-pointer select-none whitespace-nowrap;
+  }
+
+  .data-table th:hover {
+    @apply bg-gray-100 text-gray-700;
+  }
+
+  .data-table th.sorted {
+    @apply text-brand-700 bg-brand-50;
+  }
+
+  .data-table td {
+    @apply px-3 py-2 border-b border-gray-100 text-gray-900;
+  }
+
+  .data-table tr:last-child td {
+    @apply border-b-0;
+  }
+
+  .data-table tr.clickable {
+    @apply cursor-pointer;
+  }
+
+  .data-table tr.clickable:hover td {
+    @apply bg-gray-50;
+  }
+
+  .data-table tr.clickable:active td {
+    @apply bg-gray-100;
+  }
+
+  /* Table wrapper — allows horizontal scroll on mobile */
+  .table-wrap {
+    @apply -mx-4 overflow-x-auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-wrap-inner {
+    @apply inline-block min-w-full px-4;
   }
 }
