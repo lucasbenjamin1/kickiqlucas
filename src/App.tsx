@@ -8,6 +8,7 @@ import Sessions from './pages/Sessions';
 import Analytics from './pages/Analytics';
 import Reports from './pages/Reports';
 import Athletes from './pages/Athletes';
+import AthleteProfile from './pages/AthleteProfile';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/athletes" element={<Athletes />} />
+          <Route path="/athletes/:id" element={<AthleteProfile />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
       </Routes>
