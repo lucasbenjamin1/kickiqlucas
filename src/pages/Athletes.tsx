@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiCall, ApiError } from '../lib/api';
 import { formatPercentage } from '../lib/utils';
@@ -11,6 +11,7 @@ interface AthleteSummary {
   class_year: string | null;
   total_kicks: number;
   total_makes: number;
+  longest_make: number | null;
 }
 
 interface AddAthleteForm {
@@ -33,6 +34,8 @@ const emptyForm: AddAthleteForm = {
   weight: '',
 };
 
+type SortKey = 'name' | 'number' | 'class' | 'fgpct' | 'kicks' | 'longest';
+
 export default function Athletes() {
   const navigate = useNavigate();
   const [athletes, setAthletes] = useState<AthleteSummary[]>([]);
@@ -42,6 +45,8 @@ export default function Athletes() {
   const [form, setForm] = useState<AddAthleteForm>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const loadAthletes = useCallback(async () => {
     try {
@@ -59,6 +64,57 @@ export default function Athletes() {
   useEffect(() => {
     loadAthletes();
   }, [loadAthletes]);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+
+  const sortedAthletes = useMemo(() => {
+    const sorted = [...athletes];
+    const dir = sortDir === 'asc' ? 1 : -1;
+    sorted.sort((a, b) => {
+      switch (sortKey) {
+        case 'name':
+          return dir * `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`);
+        case 'number': {
+          const na = a.number ? parseInt(a.number) || 999 : 999;
+          const nb = b.number ? parseInt(b.number) || 999 : 999;
+          return dir * (na - nb);
+        }
+        case 'class': {
+          const order = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Graduate'];
+          const ca = a.class_year ? order.indexOf(a.class_year) : -1;
+          const cb = b.class_year ? order.indexOf(b.class_year) : -1;
+          return dir * (ca - cb);
+        }
+        case 'fgpct': {
+          const pa = a.total_kicks > 0 ? a.total_makes / a.total_kicks : -1;
+          const pb = b.total_kicks > 0 ? b.total_makes / b.total_kicks : -1;
+          return dir * (pa - pb);
+        }
+        case 'kicks':
+          return dir * (a.total_kicks - b.total_kicks);
+        case 'longest': {
+          const la = a.longest_make ?? -1;
+          const lb = b.longest_make ?? -1;
+          return dir * (la - lb);
+        }
+        default:
+          return 0;
+      }
+    });
+    return sorted;
+  }, [athletes, sortKey, sortDir]);
+
+  const SortIcon = ({ col }: { col: SortKey }) => {
+    if (sortKey !== col) return <span className="text-gray-300 ml-1">↕</span>;
+    return <span className="text-brand-700 ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,39 +154,34 @@ export default function Athletes() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Athletes</h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {loading ? 'Loading...' : `${athletes.length} kicker${athletes.length !== 1 ? 's' : ''}`}
+          <h2 className="text-lg font-bold text-gray-900">Athletes</h2>
+          <p className="text-xs text-gray-500 mt-0.5 font-mono">
+            {loading ? '...' : `${athletes.length} kicker${athletes.length !== 1 ? 's' : ''}`}
           </p>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="btn-primary text-sm px-4 py-2 min-h-touch flex items-center gap-1.5"
+          className="btn-primary text-sm px-3 py-2 min-h-touch flex items-center gap-1.5"
           aria-label={showForm ? 'Cancel' : 'Add Athlete'}
         >
           {showForm ? (
-            <>
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              Cancel
-            </>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           ) : (
-            <>
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add Athlete
-            </>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
           )}
+          {showForm ? 'Cancel' : 'Add Athlete'}
         </button>
       </div>
 
       {/* Error state */}
       {error && !loading && (
-        <div className="card bg-red-50 border-red-200 mb-4">
+        <div className="border border-red-200 bg-red-50 px-3 py-2 mb-4">
           <p className="text-red-700 text-sm">{error}</p>
-          <button onClick={loadAthletes} className="text-brand-700 text-sm font-medium mt-2 underline">
+          <button onClick={loadAthletes} className="text-brand-700 text-sm font-medium mt-1 underline">
             Try again
           </button>
         </div>
@@ -138,7 +189,7 @@ export default function Athletes() {
 
       {/* Add Athlete Form */}
       {showForm && (
-        <div className="card mb-4">
+        <div className="border border-gray-200 p-4 mb-4">
           <h3 className="font-semibold text-gray-900 mb-3">New Athlete</h3>
           <form onSubmit={handleSubmit} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -218,7 +269,7 @@ export default function Athletes() {
                   className="input-field"
                   value={form.height}
                   onChange={(e) => setForm({ ...form, height: e.target.value })}
-                  placeholder='6&apos;2&quot;'
+                  placeholder="6'2&quot;"
                 />
               </div>
             </div>
@@ -249,23 +300,15 @@ export default function Athletes() {
         </div>
       )}
 
-      {/* Athletes List */}
+      {/* Athletes Table */}
       {loading ? (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="card animate-pulse">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-gray-200" />
-                <div className="flex-1">
-                  <div className="h-4 bg-gray-200 rounded w-32 mb-2" />
-                  <div className="h-3 bg-gray-200 rounded w-24" />
-                </div>
-              </div>
-            </div>
+            <div key={i} className="animate-pulse h-10 bg-gray-100" />
           ))}
         </div>
       ) : athletes.length === 0 ? (
-        <div className="card text-center py-12">
+        <div className="border border-gray-200 text-center py-12 px-4">
           <svg className="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
               d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -276,64 +319,65 @@ export default function Athletes() {
             onClick={() => setShowForm(true)}
             className="btn-primary mt-4 text-sm"
           >
-            <svg className="w-5 h-5 inline mr-1.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
             Add Athlete
           </button>
         </div>
       ) : (
-        <div className="space-y-3">
-          {athletes.map((athlete) => (
-            <button
-              key={athlete.id}
-              onClick={() => navigate(`/athletes/${athlete.id}`)}
-              className="card w-full text-left active:bg-gray-50 transition-colors flex items-center gap-4"
-            >
-              {/* Avatar */}
-              <div className="w-12 h-12 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center flex-shrink-0">
-                <span className="text-lg font-bold">
-                  {athlete.first_name.charAt(0)}{athlete.last_name.charAt(0)}
-                </span>
-              </div>
-
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-gray-900 truncate">
-                    {athlete.first_name} {athlete.last_name}
-                  </h3>
-                  {athlete.number && (
-                    <span className="text-xs font-mono font-bold text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded">
-                      #{athlete.number}
-                    </span>
-                  )}
-                  {athlete.class_year && (
-                    <span className="text-xs text-gray-400">{athlete.class_year}</span>
-                  )}
-                </div>
-
-                {/* Stats row */}
-                <div className="flex items-center gap-4 mt-1.5 text-sm">
-                  <div className="flex items-center gap-1">
-                    <span className="text-gray-400">FG%</span>
-                    <span className="font-mono font-bold text-gray-900">
+        <div className="table-wrap">
+          <div className="table-wrap-inner">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th onClick={() => handleSort('name')} className={sortKey === 'name' ? 'sorted' : ''}>
+                    Name<SortIcon col="name" />
+                  </th>
+                  <th onClick={() => handleSort('number')} className={sortKey === 'number' ? 'sorted' : ''}>
+                    #<SortIcon col="number" />
+                  </th>
+                  <th onClick={() => handleSort('class')} className={sortKey === 'class' ? 'sorted' : ''}>
+                    Class<SortIcon col="class" />
+                  </th>
+                  <th onClick={() => handleSort('fgpct')} className={sortKey === 'fgpct' ? 'sorted' : ''}>
+                    FG%<SortIcon col="fgpct" />
+                  </th>
+                  <th onClick={() => handleSort('kicks')} className={sortKey === 'kicks' ? 'sorted' : ''}>
+                    Kicks<SortIcon col="kicks" />
+                  </th>
+                  <th onClick={() => handleSort('longest')} className={sortKey === 'longest' ? 'sorted' : ''}>
+                    Long<SortIcon col="longest" />
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedAthletes.map((athlete) => (
+                  <tr
+                    key={athlete.id}
+                    className="clickable"
+                    onClick={() => navigate(`/athletes/${athlete.id}`)}
+                  >
+                    <td className="font-medium">
+                      {athlete.first_name} {athlete.last_name}
+                    </td>
+                    <td className="font-mono text-gray-500">
+                      {athlete.number ? `#${athlete.number}` : '—'}
+                    </td>
+                    <td className="text-gray-500">
+                      {athlete.class_year || '—'}
+                    </td>
+                    <td className="font-mono font-bold">
                       {formatPercentage(athlete.total_makes, athlete.total_kicks)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-gray-400">Kicks</span>
-                    <span className="font-mono font-bold text-gray-900">{athlete.total_kicks}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Chevron */}
-              <svg className="w-5 h-5 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          ))}
+                    </td>
+                    <td className="font-mono">
+                      {athlete.total_kicks}
+                    </td>
+                    <td className="font-mono">
+                      {athlete.longest_make ? `${athlete.longest_make}yd` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

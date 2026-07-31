@@ -60,21 +60,6 @@ interface DashboardStats {
   trend: Trend;
 }
 
-function timeAgo(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diffMs = now - then;
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-
 function hashLabel(hash: string): string {
   const map: Record<string, string> = {
     left_hash: 'Left Hash',
@@ -118,7 +103,6 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load athletes
   const loadAthletes = useCallback(async () => {
     try {
       const data = await apiCall<AthleteOption[]>('/api/athletes');
@@ -126,12 +110,11 @@ export default function Home() {
       if (data.length > 0 && !selectedAthleteId) {
         setSelectedAthleteId(data[0].id);
       }
-    } catch (e) {
-      // non-fatal; dashboard still works at team level
+    } catch {
+      // non-fatal
     }
   }, []);
 
-  // Load dashboard stats
   const loadStats = useCallback(async (athleteId: string | null) => {
     try {
       setLoading(true);
@@ -156,7 +139,6 @@ export default function Home() {
     }
   }, [selectedAthleteId, loadStats]);
 
-  // On first athlete load, trigger stats load
   useEffect(() => {
     if (athletes.length > 0 && selectedAthleteId) {
       loadStats(selectedAthleteId);
@@ -169,31 +151,27 @@ export default function Home() {
 
   const selectedAthlete = athletes.find(a => a.id === selectedAthleteId);
 
-  // --- Loading skeleton ---
   if (loading && !stats) {
     return (
       <div className="px-4 py-6 max-w-lg mx-auto">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-48" />
-          <div className="h-10 bg-gray-200 rounded-lg" />
-          <div className="grid grid-cols-2 gap-3">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-24 bg-gray-200 rounded-xl" />
-            ))}
-          </div>
-          <div className="h-14 bg-gray-200 rounded-lg" />
+        <div className="animate-pulse space-y-3">
+          <div className="h-8 bg-gray-200 w-48" />
+          <div className="h-8 bg-gray-200 w-full" />
+          {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+            <div key={i} className="h-8 bg-gray-100" />
+          ))}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="px-4 py-6 max-w-lg mx-auto space-y-5">
+    <div className="px-4 py-6 max-w-lg mx-auto space-y-4">
       {/* Header + Athlete selector */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-brand-700">KickIQ</h2>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h2 className="text-lg font-bold text-gray-900">KickIQ</h2>
+          <p className="text-xs text-gray-500 mt-0.5 font-mono">
             {selectedAthlete
               ? `${selectedAthlete.first_name} ${selectedAthlete.last_name}`
               : 'Dashboard'}
@@ -213,7 +191,7 @@ export default function Home() {
           </select>
         )}
         {athletes.length === 1 && (
-          <span className="text-sm text-gray-400">
+          <span className="text-xs text-gray-400 font-mono">
             {athletes[0].first_name} {athletes[0].last_name}
           </span>
         )}
@@ -221,7 +199,7 @@ export default function Home() {
 
       {/* Error state */}
       {error && (
-        <div className="card text-center py-3 bg-red-50 border-red-200">
+        <div className="border border-red-200 bg-red-50 px-3 py-2 text-center">
           <p className="text-red-600 text-sm">{error}</p>
           <button
             onClick={() => loadStats(selectedAthleteId || null)}
@@ -234,131 +212,108 @@ export default function Home() {
 
       {stats && (
         <>
-          {/* --- Stats Cards Grid --- */}
-          <div className="grid grid-cols-2 gap-3">
-            {/* Season FG% */}
-            <div className="card">
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Season FG%</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">
-                {formatPercentage(stats.season_makes, stats.season_attempts)}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {stats.season_makes}/{stats.season_attempts}
-              </p>
-            </div>
-
-            {/* Last 30 Days */}
-            <div className="card">
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Last 30 Days</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">
-                {formatPercentage(stats.last_30_days_makes, stats.last_30_days_attempts)}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {stats.last_30_days_makes}/{stats.last_30_days_attempts}
-              </p>
-            </div>
-
-            {/* Estimated Range */}
-            <div className="card">
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Est. Range</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">
-                {stats.estimated_range ? `${stats.estimated_range.distance}yd` : '--'}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {stats.estimated_range
-                  ? `${stats.estimated_range.makes}/${stats.estimated_range.attempts} (${stats.estimated_range.confidence}%)`
-                  : 'Not enough data'}
-              </p>
-            </div>
-
-            {/* Best Hash */}
-            <div className="card">
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Best Hash</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">
-                {stats.best_hash ? formatPercentage(stats.best_hash.makes, stats.best_hash.attempts) : '--'}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {stats.best_hash
-                  ? `${hashLabel(stats.best_hash.hash)} (${stats.best_hash.attempts})`
-                  : 'No data'}
-              </p>
-            </div>
-
-            {/* Most Common Miss */}
-            <div className="card">
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Top Miss</p>
-              <p className="text-2xl font-bold text-red-600 mt-1">
-                {stats.most_common_miss ? missTypeLabel(stats.most_common_miss.type) : '--'}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {stats.most_common_miss
-                  ? `${stats.most_common_miss.pct}% of misses`
-                  : 'No misses'}
-              </p>
-            </div>
-
-            {/* Avg Operation Time */}
-            <div className="card">
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Avg Op Time</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">
-                {stats.avg_operation_time_ms ? formatMs(stats.avg_operation_time_ms) : '--'}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">Snap to kick</p>
-            </div>
-
-            {/* Recent Trend */}
-            <div className="card">
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Trend</p>
-              <div className="flex items-center gap-2 mt-2">
-                <span className={`text-3xl font-bold ${
-                  stats.trend.direction === 'up'
-                    ? 'text-green-600'
-                    : stats.trend.direction === 'down'
-                      ? 'text-red-600'
-                      : 'text-gray-500'
-                }`}>
-                  {stats.trend.direction === 'up' ? '↑' : stats.trend.direction === 'down' ? '↓' : '→'}
-                </span>
-                {stats.trend.direction !== 'flat' && (
-                  <span className={`text-lg font-semibold ${
-                    stats.trend.direction === 'up' ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    {stats.trend.delta_pct > 0 ? '+' : ''}{stats.trend.delta_pct}%
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-gray-400 mt-0.5">30-day comparison</p>
-            </div>
-
-            {/* Last Session */}
-            <div className="card">
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Last Session</p>
-              {stats.last_session ? (
-                <>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">
-                    {stats.last_session.makes}/{stats.last_session.attempts}{' '}
-                    <span className="text-lg font-normal text-gray-500">
-                      ({stats.last_session.fg_pct}%)
-                    </span>
-                  </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {sessionTypeLabel(stats.last_session.type)} · {timeAgo(stats.last_session.date)}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-gray-400 mt-2 text-sm">No completed sessions</p>
-                </>
-              )}
+          {/* --- Data Summary Table --- */}
+          <div className="table-wrap">
+            <div className="table-wrap-inner">
+              <table className="data-table">
+                <tbody>
+                  <tr>
+                    <td className="text-gray-500 font-medium">Season FG%</td>
+                    <td className="font-mono font-bold text-gray-900">
+                      {formatPercentage(stats.season_makes, stats.season_attempts)}
+                    </td>
+                    <td className="text-xs text-gray-400 font-mono">
+                      {stats.season_makes}/{stats.season_attempts}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="text-gray-500 font-medium">Last 30 Days</td>
+                    <td className="font-mono font-bold text-gray-900">
+                      {formatPercentage(stats.last_30_days_makes, stats.last_30_days_attempts)}
+                    </td>
+                    <td className="text-xs text-gray-400 font-mono">
+                      {stats.last_30_days_makes}/{stats.last_30_days_attempts}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="text-gray-500 font-medium">Est. Range</td>
+                    <td className="font-mono font-bold text-gray-900">
+                      {stats.estimated_range ? `${stats.estimated_range.distance} yd` : '--'}
+                    </td>
+                    <td className="text-xs text-gray-400 font-mono">
+                      {stats.estimated_range
+                        ? `${stats.estimated_range.makes}/${stats.estimated_range.attempts} (${stats.estimated_range.confidence}%)`
+                        : 'Not enough data'}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="text-gray-500 font-medium">Best Hash</td>
+                    <td className="font-mono font-bold text-gray-900">
+                      {stats.best_hash ? formatPercentage(stats.best_hash.makes, stats.best_hash.attempts) : '--'}
+                    </td>
+                    <td className="text-xs text-gray-400 font-mono">
+                      {stats.best_hash
+                        ? `${hashLabel(stats.best_hash.hash)} (${stats.best_hash.attempts})`
+                        : 'No data'}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="text-gray-500 font-medium">Most Common Miss</td>
+                    <td className="font-mono font-bold text-red-600">
+                      {stats.most_common_miss ? missTypeLabel(stats.most_common_miss.type) : '--'}
+                    </td>
+                    <td className="text-xs text-gray-400 font-mono">
+                      {stats.most_common_miss
+                        ? `${stats.most_common_miss.pct}% of misses`
+                        : 'No misses'}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="text-gray-500 font-medium">Avg Op Time</td>
+                    <td className="font-mono font-bold text-gray-900">
+                      {stats.avg_operation_time_ms ? formatMs(stats.avg_operation_time_ms) : '--'}
+                    </td>
+                    <td className="text-xs text-gray-400 font-mono">Snap to kick</td>
+                  </tr>
+                  <tr>
+                    <td className="text-gray-500 font-medium">Trend (30d)</td>
+                    <td className="font-mono font-bold">
+                      <span className={
+                        stats.trend.direction === 'up'
+                          ? 'text-green-600'
+                          : stats.trend.direction === 'down'
+                            ? 'text-red-600'
+                            : 'text-gray-500'
+                      }>
+                        {stats.trend.direction === 'up' ? '↑' : stats.trend.direction === 'down' ? '↓' : '→'}
+                        {stats.trend.direction !== 'flat' && ` ${stats.trend.delta_pct > 0 ? '+' : ''}${stats.trend.delta_pct}%`}
+                      </span>
+                    </td>
+                    <td className="text-xs text-gray-400 font-mono">vs prior 30d</td>
+                  </tr>
+                  <tr>
+                    <td className="text-gray-500 font-medium">Last Session</td>
+                    <td className="font-mono font-bold text-gray-900">
+                      {stats.last_session
+                        ? `${stats.last_session.makes}/${stats.last_session.attempts} (${stats.last_session.fg_pct}%)`
+                        : '--'}
+                    </td>
+                    <td className="text-xs text-gray-400 font-mono">
+                      {stats.last_session
+                        ? `${sessionTypeLabel(stats.last_session.type)} · ${new Date(stats.last_session.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+                        : 'No completed sessions'}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
           {/* --- Quick Actions --- */}
-          <div className="space-y-3">
+          <div className="space-y-2">
             <button
               onClick={() => {
                 if (selectedAthleteId) {
-                  // Create session instantly and navigate
                   apiCall<{ id: string }>('/api/sessions', {
                     method: 'POST',
                     body: JSON.stringify({
@@ -375,9 +330,9 @@ export default function Home() {
                   navigate('/record');
                 }
               }}
-              className="btn-primary w-full text-lg font-bold py-4 flex items-center justify-center gap-2"
+              className="btn-primary w-full text-base font-bold py-3 flex items-center justify-center gap-2"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <circle cx="12" cy="12" r="9" strokeWidth={2} />
                 <circle cx="12" cy="12" r="4" fill="currentColor" />
               </svg>
@@ -385,9 +340,9 @@ export default function Home() {
             </button>
             <button
               onClick={() => navigate('/sheets/print')}
-              className="btn-secondary w-full text-base font-semibold py-3 flex items-center justify-center gap-2"
+              className="btn-secondary w-full text-sm font-semibold py-2.5 flex items-center justify-center gap-2"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
               </svg>
@@ -395,9 +350,9 @@ export default function Home() {
             </button>
             <button
               onClick={() => navigate('/sheets/upload')}
-              className="btn-secondary w-full text-base font-semibold py-3 flex items-center justify-center gap-2"
+              className="btn-secondary w-full text-sm font-semibold py-2.5 flex items-center justify-center gap-2"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
@@ -409,7 +364,7 @@ export default function Home() {
 
       {/* Empty state: no athletes */}
       {!loading && !error && !stats && athletes.length === 0 && (
-        <div className="card text-center py-12">
+        <div className="border border-gray-200 text-center py-12 px-4">
           <div className="text-gray-400 mb-3">
             <svg className="w-12 h-12 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}

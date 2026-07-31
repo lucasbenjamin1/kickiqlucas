@@ -3,7 +3,6 @@ import { useAuth } from '../contexts/AuthContext';
 
 const navItems = [
   { to: '/', label: 'Home', icon: HomeIcon },
-  { to: '/record', label: 'Record', icon: RecordIcon },
   { to: '/sessions', label: 'Sessions', icon: SessionsIcon },
   { to: '/tendencies', label: 'Tendencies', icon: AnalyticsIcon },
   { to: '/athletes', label: 'Athletes', icon: AthletesIcon },
@@ -97,14 +96,6 @@ function HomeIcon() {
     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
         d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1" />
-    </svg>
-  );
-}
-function RecordIcon() {
-  return (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="9" strokeWidth={2} />
-      <circle cx="12" cy="12" r="4" fill="currentColor" />
     </svg>
   );
 }

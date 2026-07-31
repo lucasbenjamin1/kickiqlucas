@@ -203,11 +203,12 @@ async function handleApiRequest(req: Request, url: URL): Promise<Response> {
     
     const db = getDb();
     const athletes = db.prepare(`
-      SELECT 
+      SELECT
         a.id, a.first_name, a.last_name, a.number, a.class_year, a.dominant_foot,
         a.height, a.weight, a.photo_url, a.created_at, a.updated_at,
         COUNT(k.id) as total_kicks,
-        SUM(CASE WHEN k.result = 'made' THEN 1 ELSE 0 END) as total_makes
+        SUM(CASE WHEN k.result = 'made' THEN 1 ELSE 0 END) as total_makes,
+        MAX(CASE WHEN k.result = 'made' THEN k.distance ELSE NULL END) as longest_make
       FROM athletes a
       LEFT JOIN kicks k ON k.athlete_id = a.id
       WHERE a.team_id = ?
@@ -394,7 +395,8 @@ async function handleApiRequest(req: Request, url: URL): Promise<Response> {
       SELECT s.id, s.type, s.notes, s.started_at, s.ended_at, s.athlete_id,
         a.first_name, a.last_name, a.number,
         COUNT(k.id) as kick_count,
-        SUM(CASE WHEN k.result = 'made' THEN 1 ELSE 0 END) as makes
+        SUM(CASE WHEN k.result = 'made' THEN 1 ELSE 0 END) as makes,
+        MAX(CASE WHEN k.result = 'made' THEN k.distance ELSE NULL END) as longest_make
       FROM sessions s
       JOIN athletes a ON a.id = s.athlete_id
       LEFT JOIN kicks k ON k.session_id = s.id
@@ -1036,6 +1038,36 @@ async function handleApiRequest(req: Request, url: URL): Promise<Response> {
       practice_kicks: practiceKicks.attempts,
       practice_makes: practiceKicks.makes,
     });
+  }
+
+  // GET /api/kicks — raw kicks for an athlete (tendencies data table)
+  if (path === '/api/kicks' && method === 'GET') {
+    const { payload, error: err } = await requireAuth(req);
+    if (err) return err;
+    if (!payload.team_id) return error('No team assigned', 400);
+
+    const athleteId = url.searchParams.get('athlete_id');
+    if (!athleteId) return error('athlete_id is required');
+
+    const db = getDb();
+
+    // Verify athlete belongs to team
+    const athlete = db.prepare('SELECT id FROM athletes WHERE id = ? AND team_id = ?')
+      .get(athleteId, payload.team_id) as Record<string, unknown> | undefined;
+    if (!athlete) return error('Athlete not found', 404);
+
+    const kicks = db.prepare(`
+      SELECT k.id, k.distance, k.hash, k.result, k.miss_type, k.landing_zone,
+        k.operation_time_ms, k.notes, k.created_at, k.source_type,
+        s.type as session_type, s.started_at as session_date
+      FROM kicks k
+      JOIN sessions s ON s.id = k.session_id
+      WHERE k.athlete_id = ?
+      ORDER BY k.created_at DESC
+      LIMIT 500
+    `).all(athleteId) as Record<string, unknown>[];
+
+    return json(kicks);
   }
 
   return error('Not found', 404);
