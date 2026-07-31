@@ -20,6 +20,10 @@ db.exec(schema);
 const migrations = [
   // Add notes column to kicks if it doesn't exist
   `ALTER TABLE kicks ADD COLUMN notes TEXT`,
+  // Add source_type column to kicks
+  `ALTER TABLE kicks ADD COLUMN source_type TEXT NOT NULL DEFAULT 'mobile' CHECK(source_type IN ('mobile', 'desktop', 'grid', 'paper'))`,
+  // Add sheet_photo column to sessions
+  `ALTER TABLE sessions ADD COLUMN sheet_photo TEXT`,
   // Expand hash values from 3 to 5
   `CREATE TABLE IF NOT EXISTS kicks_new (
     id TEXT PRIMARY KEY,
@@ -32,6 +36,7 @@ const migrations = [
     landing_zone TEXT CHECK(landing_zone IN ('goalpost', 'left', 'right', 'short', NULL)),
     operation_time_ms INTEGER,
     notes TEXT,
+    source_type TEXT NOT NULL DEFAULT 'mobile' CHECK(source_type IN ('mobile', 'desktop', 'grid', 'paper')),
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
 ];
