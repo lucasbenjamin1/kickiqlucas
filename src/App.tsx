@@ -10,6 +10,7 @@ import Reports from './pages/Reports';
 import Athletes from './pages/Athletes';
 import AthleteProfile from './pages/AthleteProfile';
 import Settings from './pages/Settings';
+import PrintSheet from './pages/PrintSheet';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 
@@ -36,6 +37,13 @@ export default function App() {
           <Route path="/athletes/:id" element={<AthleteProfile />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
+
+        {/* Print sheet — fullscreen, no Layout chrome */}
+        <Route path="/sheets/print" element={
+          <ProtectedRoute>
+            <PrintSheet />
+          </ProtectedRoute>
+        } />
       </Routes>
     </AuthProvider>
   );

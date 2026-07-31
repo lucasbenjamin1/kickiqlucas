@@ -354,7 +354,7 @@ export default function Home() {
           </div>
 
           {/* --- Quick Actions --- */}
-          <div>
+          <div className="space-y-3">
             <button
               onClick={() => {
                 if (selectedAthleteId) {
@@ -382,6 +382,16 @@ export default function Home() {
                 <circle cx="12" cy="12" r="4" fill="currentColor" />
               </svg>
               New Session
+            </button>
+            <button
+              onClick={() => navigate('/sheets/print')}
+              className="btn-secondary w-full text-base font-semibold py-3 flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              Print Sheet
             </button>
           </div>
         </>
