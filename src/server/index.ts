@@ -605,10 +605,196 @@ async function handleApiRequest(req: Request, url: URL): Promise<Response> {
     return json({ deleted: kickId });
   }
 
-  return error('Not found', 404);
-}
+  // === STATS ROUTES ===
 
-Bun.serve({
+  // GET /api/stats/dashboard — pre-computed dashboard stats
+  if (path === '/api/stats/dashboard' && method === 'GET') {
+    const { payload, error: err } = await requireAuth(req);
+    if (err) return err;
+    if (!payload.team_id) return error('No team assigned', 400);
+
+    const athleteId = url.searchParams.get('athlete_id');
+    const db = getDb();
+
+    // Build WHERE clause for team or athlete filtering
+    const kickWhere = athleteId
+      ? 'k.athlete_id = ?'
+      : 's.team_id = ?';
+    const kickParam = athleteId || payload.team_id;
+
+    // --- Season stats ---
+    const seasonStats = db.prepare(`
+      SELECT
+        COUNT(*) as attempts,
+        SUM(CASE WHEN k.result = 'made' THEN 1 ELSE 0 END) as makes
+      FROM kicks k
+      JOIN sessions s ON s.id = k.session_id
+      WHERE ${kickWhere}
+    `).get(kickParam) as { attempts: number; makes: number };
+
+    const seasonFgPct = seasonStats.attempts > 0
+      ? Math.round((seasonStats.makes / seasonStats.attempts) * 100)
+      : 0;
+
+    // --- Last 30 days ---
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const last30Stats = db.prepare(`
+      SELECT
+        COUNT(*) as attempts,
+        SUM(CASE WHEN k.result = 'made' THEN 1 ELSE 0 END) as makes
+      FROM kicks k
+      JOIN sessions s ON s.id = k.session_id
+      WHERE ${kickWhere} AND k.created_at >= ?
+    `).get(kickParam, thirtyDaysAgo) as { attempts: number; makes: number };
+
+    const last30FgPct = last30Stats.attempts > 0
+      ? Math.round((last30Stats.makes / last30Stats.attempts) * 100)
+      : 0;
+
+    // --- Last session ---
+    const lastSession = db.prepare(`
+      SELECT s.id, s.type, s.started_at, s.ended_at,
+        COUNT(k.id) as attempts,
+        SUM(CASE WHEN k.result = 'made' THEN 1 ELSE 0 END) as makes
+      FROM sessions s
+      LEFT JOIN kicks k ON k.session_id = s.id
+      WHERE s.team_id = ?
+        ${athleteId ? 'AND s.athlete_id = ?' : ''}
+        AND s.ended_at IS NOT NULL
+      GROUP BY s.id
+      ORDER BY s.ended_at DESC
+      LIMIT 1
+    `).get(payload.team_id, ...(athleteId ? [athleteId] : [])) as
+      { id: string; type: string; started_at: string; ended_at: string; attempts: number; makes: number } | undefined;
+
+    const lastSessionData = lastSession ? {
+      id: lastSession.id,
+      type: lastSession.type,
+      date: lastSession.ended_at,
+      attempts: lastSession.attempts,
+      makes: lastSession.makes,
+      fg_pct: lastSession.attempts > 0
+        ? Math.round((lastSession.makes / lastSession.attempts) * 100)
+        : 0,
+    } : null;
+
+    // --- Estimated range: longest distance with >=3 attempts and >=60% makes ---
+    const estimatedRangeRow = db.prepare(`
+      SELECT k.distance,
+        COUNT(*) as attempts,
+        SUM(CASE WHEN k.result = 'made' THEN 1 ELSE 0 END) as makes
+      FROM kicks k
+      JOIN sessions s ON s.id = k.session_id
+      WHERE ${kickWhere}
+      GROUP BY k.distance
+      HAVING attempts >= 3 AND (SUM(CASE WHEN k.result = 'made' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) >= 60
+      ORDER BY k.distance DESC
+      LIMIT 1
+    `).get(kickParam) as { distance: number; attempts: number; makes: number } | undefined;
+
+    const estimatedRange = estimatedRangeRow ? {
+      distance: estimatedRangeRow.distance,
+      attempts: estimatedRangeRow.attempts,
+      makes: estimatedRangeRow.makes,
+      confidence: Math.round((estimatedRangeRow.makes / estimatedRangeRow.attempts) * 100),
+    } : null;
+
+    // --- Best hash ---
+    const bestHashRow = db.prepare(`
+      SELECT k.hash,
+        COUNT(*) as attempts,
+        SUM(CASE WHEN k.result = 'made' THEN 1 ELSE 0 END) as makes
+      FROM kicks k
+      JOIN sessions s ON s.id = k.session_id
+      WHERE ${kickWhere}
+      GROUP BY k.hash
+      HAVING attempts > 0
+      ORDER BY (SUM(CASE WHEN k.result = 'made' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) DESC
+      LIMIT 1
+    `).get(kickParam) as { hash: string; attempts: number; makes: number } | undefined;
+
+    const bestHash = bestHashRow ? {
+      hash: bestHashRow.hash,
+      attempts: bestHashRow.attempts,
+      makes: bestHashRow.makes,
+      fg_pct: Math.round((bestHashRow.makes / bestHashRow.attempts) * 100),
+    } : null;
+
+    // --- Most common miss ---
+    const mostCommonMissRow = db.prepare(`
+      SELECT k.miss_type,
+        COUNT(*) as count
+      FROM kicks k
+      JOIN sessions s ON s.id = k.session_id
+      WHERE ${kickWhere} AND k.miss_type IS NOT NULL
+      GROUP BY k.miss_type
+      ORDER BY count DESC
+      LIMIT 1
+    `).get(kickParam) as { miss_type: string; count: number } | undefined;
+
+    const totalMisses = db.prepare(`
+      SELECT COUNT(*) as count FROM kicks k
+      JOIN sessions s ON s.id = k.session_id
+      WHERE ${kickWhere} AND k.result != 'made'
+    `).get(kickParam) as { count: number };
+
+    const mostCommonMiss = mostCommonMissRow ? {
+      type: mostCommonMissRow.miss_type,
+      count: mostCommonMissRow.count,
+      pct: totalMisses.count > 0 ? Math.round((mostCommonMissRow.count / totalMisses.count) * 100) : 0,
+    } : null;
+
+    // --- Avg operation time ---
+    const avgOpTime = db.prepare(`
+      SELECT AVG(k.operation_time_ms) as avg_ms
+      FROM kicks k
+      JOIN sessions s ON s.id = k.session_id
+      WHERE ${kickWhere} AND k.operation_time_ms IS NOT NULL
+    `).get(kickParam) as { avg_ms: number | null };
+
+    // --- Trend: compare last 30d vs previous 30d ---
+    const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+
+    const prev30Stats = db.prepare(`
+      SELECT
+        COUNT(*) as attempts,
+        SUM(CASE WHEN k.result = 'made' THEN 1 ELSE 0 END) as makes
+      FROM kicks k
+      JOIN sessions s ON s.id = k.session_id
+      WHERE ${kickWhere} AND k.created_at >= ? AND k.created_at < ?
+    `).get(kickParam, sixtyDaysAgo, thirtyDaysAgo) as { attempts: number; makes: number };
+
+    const prev30FgPct = prev30Stats.attempts > 0
+      ? Math.round((prev30Stats.makes / prev30Stats.attempts) * 100)
+      : 0;
+
+    const deltaPct = last30FgPct - prev30FgPct;
+    const trend = {
+      direction: deltaPct > 0 ? 'up' as const : deltaPct < 0 ? 'down' as const : 'flat' as const,
+      delta_pct: deltaPct,
+    };
+
+    return json({
+      athlete_id: athleteId || null,
+      season_fg_pct: seasonFgPct,
+      season_attempts: seasonStats.attempts,
+      season_makes: seasonStats.makes,
+      last_30_days_fg_pct: last30FgPct,
+      last_30_days_attempts: last30Stats.attempts,
+      last_30_days_makes: last30Stats.makes,
+      last_session: lastSessionData,
+      estimated_range: estimatedRange,
+      best_hash: bestHash,
+      most_common_miss: mostCommonMiss,
+      avg_operation_time_ms: avgOpTime.avg_ms ? Math.round(avgOpTime.avg_ms) : null,
+      trend,
+    });
+  }
+
+  return error('Not found', 404);
+  }
+
+  Bun.serve({
   port: PORT,
   hostname: '0.0.0.0',
   async fetch(req: Request) {
