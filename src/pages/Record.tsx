@@ -43,6 +43,14 @@ const SESSION_TYPES = [
 
 const DISTANCE_PRESETS = [20, 25, 30, 35, 40, 45, 50, 55, 60];
 
+const HASHES: { value: string; label: string; short: string }[] = [
+  { value: 'left_hash', label: 'Left Hash', short: 'LH' },
+  { value: 'left_middle', label: 'Left Middle', short: 'LM' },
+  { value: 'middle', label: 'Middle', short: 'M' },
+  { value: 'right_middle', label: 'Right Middle', short: 'RM' },
+  { value: 'right_hash', label: 'Right Hash', short: 'RH' },
+];
+
 function getActiveSessionId(): string | null {
   try {
     return sessionStorage.getItem('kickiq_active_session');
@@ -56,8 +64,9 @@ function setActiveSessionId(id: string | null): void {
   } catch { /* ignore */ }
 }
 
-function hashLabel(hash: string): string {
-  return hash === 'left' ? 'Left Hash' : hash === 'center' ? 'Middle' : 'Right Hash';
+function hashShortLabel(hash: string): string {
+  const h = HASHES.find(x => x.value === hash);
+  return h ? h.short : hash;
 }
 
 function resultLabel(result: string): string {
@@ -78,19 +87,16 @@ export default function Record() {
   const [loadingSession, setLoadingSession] = useState(true);
   const [kickCount, setKickCount] = useState(0);
 
-  // New session form
-  const [showNewSession, setShowNewSession] = useState(false);
+  // Athlete picker (shown when no session and no preselected athlete)
   const [athletes, setAthletes] = useState<AthleteOption[]>([]);
-  const [newSessionAthlete, setNewSessionAthlete] = useState(preselectedAthleteId || '');
-  const [newSessionType, setNewSessionType] = useState('practice');
-  const [newSessionNotes, setNewSessionNotes] = useState('');
+  const [selectedAthleteId, setSelectedAthleteId] = useState(preselectedAthleteId || '');
   const [creatingSession, setCreatingSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
 
   // Kick form state
   const [distance, setDistance] = useState<number>(35);
   const [customDistance, setCustomDistance] = useState('');
-  const [hash, setHash] = useState<string>('center');
+  const [hash, setHash] = useState<string>('middle');
   const [result, setResult] = useState<string | null>(null);
   const [landingZone, setLandingZone] = useState<string | null>(null);
   const [missType, setMissType] = useState<string | null>(null);
@@ -105,6 +111,7 @@ export default function Record() {
   const [finishing, setFinishing] = useState(false);
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [saveFlash, setSaveFlash] = useState(false);
 
   const distanceInputRef = useRef<HTMLInputElement>(null);
 
@@ -113,26 +120,39 @@ export default function Record() {
     const sessionId = getActiveSessionId();
     if (sessionId) {
       loadSession(sessionId);
+    } else if (preselectedAthleteId) {
+      // Auto-create session when athlete is preselected
+      createInstantSession(preselectedAthleteId);
     } else {
       setLoadingSession(false);
+      loadAthletes();
     }
   }, []);
 
-  // Load athletes for new session form
-  useEffect(() => {
-    if (showNewSession) {
-      loadAthletes();
+  async function loadAthletes() {
+    try {
+      const data = await apiCall<AthleteOption[]>('/api/athletes');
+      setAthletes(data);
+      if (data.length === 1) {
+        setSelectedAthleteId(data[0].id);
+      }
+    } catch (e) {
+      setSessionError('Failed to load athletes');
     }
-  }, [showNewSession]);
+  }
 
   async function loadSession(sessionId: string) {
     try {
       setLoadingSession(true);
       const data = await apiCall<ActiveSession & { kick_count: number }>(`/api/sessions/${sessionId}`);
       if (data.ended_at) {
-        // Session already ended, clear it
         setActiveSessionId(null);
         setActiveSession(null);
+        // If we have a preselected athlete, auto-create a new session
+        if (preselectedAthleteId) {
+          createInstantSession(preselectedAthleteId);
+          return;
+        }
       } else {
         setActiveSession(data);
         setKickCount(data.kick_count || 0);
@@ -145,58 +165,56 @@ export default function Record() {
     }
   }
 
-  async function loadAthletes() {
-    try {
-      const data = await apiCall<AthleteOption[]>('/api/athletes');
-      setAthletes(data);
-      if (data.length === 0) {
-        setSessionError('No athletes found. Add an athlete first.');
-      }
-    } catch (e) {
-      setSessionError('Failed to load athletes');
-    }
-  }
-
-  async function createSession(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newSessionAthlete || !newSessionType) return;
-
+  async function createInstantSession(athleteId: string) {
     try {
       setCreatingSession(true);
       setSessionError(null);
       const data = await apiCall<ActiveSession>('/api/sessions', {
         method: 'POST',
         body: JSON.stringify({
-          athlete_id: newSessionAthlete,
-          type: newSessionType,
-          notes: newSessionNotes.trim() || null,
+          athlete_id: athleteId,
+          type: 'practice',
         }),
       });
       setActiveSessionId(data.id);
       setActiveSession(data);
       setKickCount(0);
-      setShowNewSession(false);
       setLastKick(null);
       setResult(null);
       setLandingZone(null);
       setMissType(null);
       setOperationTime('');
       setKickNotes('');
+      setLoadingSession(false);
     } catch (e) {
       setSessionError(e instanceof ApiError ? e.message : 'Failed to create session');
+      setLoadingSession(false);
     } finally {
       setCreatingSession(false);
     }
   }
 
-  async function saveKick() {
+  async function handleStartSession() {
+    if (!selectedAthleteId) return;
+    createInstantSession(selectedAthleteId);
+  }
+
+  // Auto-save when result is selected and we have distance and hash
+  useEffect(() => {
+    if (activeSession && result && distance && hash && !savingKick) {
+      autoSaveKick();
+    }
+  }, [result]);
+
+  async function autoSaveKick() {
     if (!activeSession || !distance || !hash || !result) return;
+    const savedResult = result;
 
     try {
       setSavingKick(true);
-      const body: Record<string, unknown> = { distance, hash, result };
+      const body: Record<string, unknown> = { distance, hash, result: savedResult };
 
-      if (result === 'missed' && missType) body.miss_type = missType;
+      if (savedResult === 'missed' && missType) body.miss_type = missType;
       if (landingZone) body.landing_zone = landingZone;
       if (operationTime && parseInt(operationTime) > 0) body.operation_time_ms = parseInt(operationTime);
       if (kickNotes.trim()) body.notes = kickNotes.trim();
@@ -206,7 +224,6 @@ export default function Record() {
         { method: 'POST', body: JSON.stringify(body) }
       );
 
-      // Update state
       setKickCount(c => c + 1);
       setLastKick({ id: kick.id, distance: kick.distance, hash: kick.hash, result: kick.result });
       setResult(null);
@@ -214,15 +231,18 @@ export default function Record() {
       setMissType(null);
       setOperationTime('');
       setKickNotes('');
+      setShowMore(false);
+
+      // Flash indicator
+      setSaveFlash(true);
+      setTimeout(() => setSaveFlash(false), 600);
+
       setFeedback(`Kick #${kickCount + 1} saved`);
-
-      // Clear feedback after 2s
       setTimeout(() => setFeedback(null), 2000);
-
-      // Clear "More" section on save
-      if (showMore) setShowMore(false);
     } catch (e) {
       setFeedback(e instanceof ApiError ? e.message : 'Failed to save kick');
+      // Reset result so coach can retry
+      setResult(null);
     } finally {
       setSavingKick(false);
     }
@@ -257,8 +277,6 @@ export default function Record() {
       setActiveSessionId(null);
       setActiveSession(null);
       setShowFinishConfirm(false);
-
-      // Navigate to sessions list
       navigate('/sessions');
     } catch (e) {
       setFeedback(e instanceof ApiError ? e.message : 'Failed to finish session');
@@ -268,7 +286,6 @@ export default function Record() {
     }
   }
 
-  // Handle keyboard submit on custom distance
   const handleCustomDistanceKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && customDistance) {
       const d = parseInt(customDistance);
@@ -280,7 +297,7 @@ export default function Record() {
   }, [customDistance]);
 
   // ------- Loading -------
-  if (loadingSession) {
+  if (loadingSession || creatingSession) {
     return (
       <div className="px-4 py-6 max-w-lg mx-auto">
         <div className="animate-pulse space-y-4">
@@ -291,111 +308,51 @@ export default function Record() {
     );
   }
 
-  // ------- No Active Session / New Session Form -------
-  if (!activeSession && !showNewSession) {
+  // ------- No Active Session — Show quick athlete picker -------
+  if (!activeSession) {
     return (
       <div className="px-4 py-6 max-w-lg mx-auto">
         <h2 className="text-xl font-bold text-gray-900">Record Kicks</h2>
         <p className="text-gray-500 mt-1">Start a session to begin recording kicks.</p>
 
-        <div className="card mt-6 text-center py-8">
-          <div className="text-gray-400 mb-4">
-            <svg className="w-12 h-12 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="9" strokeWidth={1.5} />
-              <circle cx="12" cy="12" r="4" fill="currentColor" />
-            </svg>
-            <p className="text-sm">No active session</p>
-            <p className="text-xs mt-1">Start a new session to begin recording kicks.</p>
-          </div>
-          <button
-            onClick={() => setShowNewSession(true)}
-            className="btn-primary w-full"
-          >
-            New Session
-          </button>
-        </div>
-
-        <div className="mt-4">
-          <p className="text-xs text-gray-400 text-center">
-            Tip: You can also start a session from an athlete's profile.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // ------- New Session Form -------
-  if (!activeSession && showNewSession) {
-    return (
-      <div className="px-4 py-6 max-w-lg mx-auto">
-        <div className="flex items-center gap-3 mb-4">
-          <button
-            onClick={() => setShowNewSession(false)}
-            className="min-h-touch min-w-touch flex items-center justify-center text-gray-500 hover:text-gray-700 rounded-lg"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <h2 className="text-xl font-bold text-gray-900">New Session</h2>
-        </div>
-
-        <form onSubmit={createSession} className="card space-y-4">
-          {/* Athlete dropdown */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Athlete <span className="text-brand-700">*</span>
-            </label>
-            <select
-              className="input-field"
-              value={newSessionAthlete}
-              onChange={(e) => setNewSessionAthlete(e.target.value)}
-              required
-            >
-              <option value="">Select athlete...</option>
-              {athletes.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.first_name} {a.last_name}{a.number ? ` (#${a.number})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Session type */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Session Type <span className="text-brand-700">*</span>
-            </label>
-            <select
-              className="input-field"
-              value={newSessionType}
-              onChange={(e) => setNewSessionType(e.target.value)}
-              required
-            >
-              {SESSION_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-            <textarea
-              className="input-field resize-none"
-              rows={2}
-              value={newSessionNotes}
-              onChange={(e) => setNewSessionNotes(e.target.value)}
-              placeholder="Optional notes about this session..."
-            />
-          </div>
-
+        <div className="card mt-6 space-y-4">
           {sessionError && <p className="text-red-600 text-sm">{sessionError}</p>}
 
-          <button type="submit" disabled={creatingSession || !newSessionAthlete} className="btn-primary w-full">
-            {creatingSession ? 'Creating...' : 'Start Session'}
-          </button>
-        </form>
+          {athletes.length === 0 ? (
+            <>
+              <p className="text-sm text-gray-500 text-center py-4">No athletes found. Add an athlete first.</p>
+              <button onClick={() => navigate('/athletes')} className="btn-primary w-full text-sm">
+                Add Athlete
+              </button>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Athlete</label>
+                <select
+                  className="input-field"
+                  value={selectedAthleteId}
+                  onChange={(e) => setSelectedAthleteId(e.target.value)}
+                >
+                  <option value="">Select athlete...</option>
+                  {athletes.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.first_name} {a.last_name}{a.number ? ` (#${a.number})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                onClick={handleStartSession}
+                disabled={!selectedAthleteId || creatingSession}
+                className="btn-primary w-full text-lg font-bold py-4"
+              >
+                {creatingSession ? 'Starting...' : 'Start Session'}
+              </button>
+            </>
+          )}
+        </div>
       </div>
     );
   }
@@ -423,8 +380,12 @@ export default function Record() {
             Finish
           </button>
         </div>
-        {feedback && (
-          <div className="mt-1.5 text-xs font-medium text-brand-700 animate-pulse">{feedback}</div>
+        {/* Save flash indicator */}
+        <div className={`mt-1 text-xs font-medium transition-opacity duration-300 ${saveFlash ? 'opacity-100 text-green-600' : 'opacity-0'}`}>
+          ✓ Saved
+        </div>
+        {feedback && !saveFlash && (
+          <div className="mt-1.5 text-xs font-medium text-brand-700">{feedback}</div>
         )}
       </div>
 
@@ -471,61 +432,66 @@ export default function Record() {
           </div>
         </div>
 
-        {/* Hash — 3 large buttons */}
+        {/* Hash — 5 buttons, narrower on mobile */}
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-2">Hash</label>
-          <div className="grid grid-cols-3 gap-2">
-            {(['left', 'center', 'right'] as const).map((h) => (
+          <div className="grid grid-cols-5 gap-1.5">
+            {HASHES.map((h) => (
               <button
-                key={h}
+                key={h.value}
                 type="button"
-                onClick={() => setHash(h)}
-                className={`min-h-[52px] rounded-lg font-semibold text-sm transition-colors
-                  ${hash === h
+                onClick={() => setHash(h.value)}
+                title={h.label}
+                className={`min-h-[48px] rounded-lg font-semibold text-xs transition-colors
+                  ${hash === h.value
                     ? 'bg-brand-700 text-white shadow-sm'
                     : 'bg-gray-100 text-gray-700 active:bg-gray-200 hover:bg-gray-200'
                   }`}
               >
-                {hashLabel(h)}
+                <span className="block">{h.short}</span>
+                <span className="block text-[10px] opacity-70 mt-0.5">{h.label.split(' ')[0]}</span>
               </button>
             ))}
           </div>
         </div>
 
-        {/* Result — 3 large color-coded buttons */}
+        {/* Result — 3 large color-coded buttons (auto-saves on click) */}
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-2">Result</label>
           <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
               onClick={() => setResult('made')}
+              disabled={savingKick}
               className={`min-h-[56px] rounded-lg font-bold text-sm transition-all
                 ${result === 'made'
                   ? 'bg-green-600 text-white shadow-md scale-[1.02]'
                   : 'bg-green-50 text-green-800 border border-green-200 active:bg-green-100'
-                }`}
+                } ${savingKick ? 'opacity-60' : ''}`}
             >
               ✅ Made
             </button>
             <button
               type="button"
               onClick={() => setResult('missed')}
+              disabled={savingKick}
               className={`min-h-[56px] rounded-lg font-bold text-sm transition-all
                 ${result === 'missed'
                   ? 'bg-red-600 text-white shadow-md scale-[1.02]'
                   : 'bg-red-50 text-red-800 border border-red-200 active:bg-red-100'
-                }`}
+                } ${savingKick ? 'opacity-60' : ''}`}
             >
               ❌ Missed
             </button>
             <button
               type="button"
               onClick={() => setResult('blocked')}
+              disabled={savingKick}
               className={`min-h-[56px] rounded-lg font-bold text-sm transition-all
                 ${result === 'blocked'
                   ? 'bg-orange-500 text-white shadow-md scale-[1.02]'
                   : 'bg-orange-50 text-orange-800 border border-orange-200 active:bg-orange-100'
-                }`}
+                } ${savingKick ? 'opacity-60' : ''}`}
             >
               🚫 Blocked
             </button>
@@ -555,6 +521,21 @@ export default function Record() {
           </div>
         )}
 
+        {/* Operation Time — on main form */}
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Op Time (ms)</label>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={9999}
+            value={operationTime}
+            onChange={(e) => setOperationTime(e.target.value)}
+            placeholder="e.g. 1250"
+            className="input-field w-36"
+          />
+        </div>
+
         {/* Landing Zone — optional quick select */}
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-2">Landing Zone</label>
@@ -576,7 +557,7 @@ export default function Record() {
           </div>
         </div>
 
-        {/* More section (collapsible) */}
+        {/* More section (collapsible) — notes only */}
         <div>
           <button
             type="button"
@@ -591,21 +572,6 @@ export default function Record() {
 
           {showMore && (
             <div className="mt-2 space-y-3 pl-1">
-              {/* Operation time */}
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Operation Time (ms)</label>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  max={9999}
-                  value={operationTime}
-                  onChange={(e) => setOperationTime(e.target.value)}
-                  placeholder="e.g. 1250"
-                  className="input-field w-32"
-                />
-              </div>
-
               {/* Kick notes */}
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
@@ -620,41 +586,29 @@ export default function Record() {
             </div>
           )}
         </div>
-      </div>
-
-      {/* Bottom action bar */}
-      <div className="sticky bottom-0 px-4 py-3 bg-white border-t border-gray-100 safe-bottom space-y-3">
-        {/* Undo + Save row */}
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={undoLastKick}
-            disabled={!lastKick || undoing}
-            className="btn-secondary text-sm flex items-center gap-1 disabled:opacity-30"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-            </svg>
-            {undoing ? '...' : 'Undo'}
-          </button>
-
-          <button
-            type="button"
-            onClick={saveKick}
-            disabled={!result || savingKick}
-            className="btn-primary flex-1 text-base font-bold"
-          >
-            {savingKick ? 'Saving...' : `Save & Next`}
-          </button>
-        </div>
 
         {/* Last kick info */}
         {lastKick && (
-          <div className="text-center text-xs text-gray-400">
-            Last: {lastKick.distance}yd {hashLabel(lastKick.hash)} — {resultLabel(lastKick.result)}
+          <div className="text-center text-xs text-gray-400 pt-1">
+            Last: {lastKick.distance}yd {hashShortLabel(lastKick.hash)} — {resultLabel(lastKick.result)}
           </div>
         )}
+      </div>
+
+      {/* Bottom action bar — just Undo */}
+      <div className="sticky bottom-0 px-4 py-3 bg-white border-t border-gray-100 safe-bottom">
+        <button
+          type="button"
+          onClick={undoLastKick}
+          disabled={!lastKick || undoing}
+          className="btn-secondary w-full text-sm flex items-center justify-center gap-1 disabled:opacity-30"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+          </svg>
+          {undoing ? 'Undoing...' : 'Undo Last Kick'}
+        </button>
       </div>
 
       {/* Finish session confirmation modal */}

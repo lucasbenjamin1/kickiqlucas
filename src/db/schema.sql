@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS kicks (
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   athlete_id TEXT NOT NULL REFERENCES athletes(id) ON DELETE CASCADE,
   distance INTEGER NOT NULL,
-  hash TEXT NOT NULL CHECK(hash IN ('left', 'center', 'right')),
+  hash TEXT NOT NULL CHECK(hash IN ('left_hash', 'left_middle', 'middle', 'right_middle', 'right_hash')),
   result TEXT NOT NULL CHECK(result IN ('made', 'missed', 'blocked')),
   miss_type TEXT CHECK(miss_type IN ('short', 'wide_left', 'wide_right', 'crossbar', 'blocked', NULL)),
   landing_zone TEXT CHECK(landing_zone IN ('goalpost', 'left', 'right', 'short', NULL)),

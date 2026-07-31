@@ -5,7 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Home from './pages/Home';
 import Record from './pages/Record';
 import Sessions from './pages/Sessions';
-import Analytics from './pages/Analytics';
+import Tendencies from './pages/Tendencies';
 import Reports from './pages/Reports';
 import Athletes from './pages/Athletes';
 import AthleteProfile from './pages/AthleteProfile';
@@ -30,7 +30,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/record" element={<Record />} />
           <Route path="/sessions" element={<Sessions />} />
-          <Route path="/analytics" element={<Analytics />} />
+          <Route path="/tendencies" element={<Tendencies />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/athletes" element={<Athletes />} />
           <Route path="/athletes/:id" element={<AthleteProfile />} />

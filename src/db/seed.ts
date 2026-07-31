@@ -41,7 +41,7 @@ insertAthlete.run(athleteId, teamId, 'Demo', 'Kicker', '99', 'Junior', 'right', 
 insertSession.run(sessionId, teamId, athleteId, 'practice', 'Demo practice session', '2026-07-30T14:00:00Z', '2026-07-30T14:45:00Z');
 
 // Generate 100+ practice kicks
-const hashes = ['left', 'center', 'right'] as const;
+const hashes = ['left_hash', 'left_middle', 'middle', 'right_middle', 'right_hash'] as const;
 const distances = [20, 25, 30, 35, 40, 45, 50, 55];
 
 for (let i = 0; i < 110; i++) {
@@ -65,21 +65,21 @@ const gameSessionId = randomUUID();
 insertSession.run(gameSessionId, teamId, athleteId, 'game', 'Demo game vs Rival State', '2026-07-24T18:00:00Z', '2026-07-24T21:00:00Z');
 
 const gameKicks = [
-  { dist: 25, hash: 'center', result: 'made', miss: null, lz: 'goalpost', ot: 1150 },
-  { dist: 35, hash: 'right', result: 'made', miss: null, lz: 'goalpost', ot: 1220 },
-  { dist: 42, hash: 'left', result: 'made', miss: null, lz: 'goalpost', ot: 1280 },
-  { dist: 47, hash: 'center', result: 'missed', miss: 'wide_right', lz: 'right', ot: 1310 },
-  { dist: 38, hash: 'right', result: 'made', miss: null, lz: 'goalpost', ot: 1190 },
-  { dist: 30, hash: 'left', result: 'made', miss: null, lz: 'goalpost', ot: 1120 },
-  { dist: 52, hash: 'center', result: 'missed', miss: 'short', lz: 'short', ot: 1350 },
-  { dist: 22, hash: 'center', result: 'made', miss: null, lz: 'goalpost', ot: 1080 },
-  { dist: 44, hash: 'left', result: 'made', miss: null, lz: 'goalpost', ot: 1260 },
-  { dist: 33, hash: 'right', result: 'made', miss: null, lz: 'goalpost', ot: 1170 },
-  { dist: 49, hash: 'center', result: 'made', miss: null, lz: 'goalpost', ot: 1320 },
-  { dist: 28, hash: 'left', result: 'made', miss: null, lz: 'goalpost', ot: 1100 },
-  { dist: 55, hash: 'right', result: 'missed', miss: 'wide_left', lz: 'left', ot: 1380 },
-  { dist: 40, hash: 'center', result: 'made', miss: null, lz: 'goalpost', ot: 1240 },
-  { dist: 36, hash: 'left', result: 'made', miss: null, lz: 'goalpost', ot: 1160 },
+  { dist: 25, hash: 'middle', result: 'made', miss: null, lz: 'goalpost', ot: 1150 },
+  { dist: 35, hash: 'right_hash', result: 'made', miss: null, lz: 'goalpost', ot: 1220 },
+  { dist: 42, hash: 'left_hash', result: 'made', miss: null, lz: 'goalpost', ot: 1280 },
+  { dist: 47, hash: 'middle', result: 'missed', miss: 'wide_right', lz: 'right', ot: 1310 },
+  { dist: 38, hash: 'right_middle', result: 'made', miss: null, lz: 'goalpost', ot: 1190 },
+  { dist: 30, hash: 'left_middle', result: 'made', miss: null, lz: 'goalpost', ot: 1120 },
+  { dist: 52, hash: 'middle', result: 'missed', miss: 'short', lz: 'short', ot: 1350 },
+  { dist: 22, hash: 'middle', result: 'made', miss: null, lz: 'goalpost', ot: 1080 },
+  { dist: 44, hash: 'left_hash', result: 'made', miss: null, lz: 'goalpost', ot: 1260 },
+  { dist: 33, hash: 'right_middle', result: 'made', miss: null, lz: 'goalpost', ot: 1170 },
+  { dist: 49, hash: 'middle', result: 'made', miss: null, lz: 'goalpost', ot: 1320 },
+  { dist: 28, hash: 'left_middle', result: 'made', miss: null, lz: 'goalpost', ot: 1100 },
+  { dist: 55, hash: 'right_hash', result: 'missed', miss: 'wide_left', lz: 'left', ot: 1380 },
+  { dist: 40, hash: 'middle', result: 'made', miss: null, lz: 'goalpost', ot: 1240 },
+  { dist: 36, hash: 'left_hash', result: 'made', miss: null, lz: 'goalpost', ot: 1160 },
 ];
 
 for (const k of gameKicks) {

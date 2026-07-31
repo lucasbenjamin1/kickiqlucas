@@ -547,7 +547,7 @@ async function handleApiRequest(req: Request, url: URL): Promise<Response> {
       return error('distance, hash, and result are required');
     }
 
-    const validHashes = ['left', 'center', 'right'];
+    const validHashes = ['left_hash', 'left_middle', 'middle', 'right_middle', 'right_hash'];
     const validResults = ['made', 'missed', 'blocked'];
     const validMissTypes = ['short', 'wide_left', 'wide_right', 'crossbar', 'blocked', null];
     const validLandingZones = ['goalpost', 'left', 'right', 'short', null];
@@ -788,6 +788,112 @@ async function handleApiRequest(req: Request, url: URL): Promise<Response> {
       most_common_miss: mostCommonMiss,
       avg_operation_time_ms: avgOpTime.avg_ms ? Math.round(avgOpTime.avg_ms) : null,
       trend,
+    });
+  }
+
+  // GET /api/stats/tendencies — detailed stats for tendencies page
+  if (path === '/api/stats/tendencies' && method === 'GET') {
+    const { payload, error: err } = await requireAuth(req);
+    if (err) return err;
+    if (!payload.team_id) return error('No team assigned', 400);
+
+    const athleteId = url.searchParams.get('athlete_id');
+    if (!athleteId) return error('athlete_id is required');
+
+    const db = getDb();
+
+    // Verify athlete belongs to team
+    const athlete = db.prepare('SELECT a.first_name, a.last_name, t.name as team_name FROM athletes a JOIN teams t ON t.id = a.team_id WHERE a.id = ? AND a.team_id = ?')
+      .get(athleteId, payload.team_id) as { first_name: string; last_name: string; team_name: string } | undefined;
+    if (!athlete) return error('Athlete not found', 404);
+
+    // Season stats
+    const seasonStats = db.prepare(`
+      SELECT COUNT(*) as attempts, SUM(CASE WHEN result = 'made' THEN 1 ELSE 0 END) as makes
+      FROM kicks WHERE athlete_id = ?
+    `).get(athleteId) as { attempts: number; makes: number };
+
+    // By distance
+    const byDistance = db.prepare(`
+      SELECT distance, COUNT(*) as attempts, SUM(CASE WHEN result = 'made' THEN 1 ELSE 0 END) as makes
+      FROM kicks WHERE athlete_id = ?
+      GROUP BY distance ORDER BY distance ASC
+    `).all(athleteId) as { distance: number; attempts: number; makes: number }[];
+
+    // By hash
+    const byHash = db.prepare(`
+      SELECT hash, COUNT(*) as attempts, SUM(CASE WHEN result = 'made' THEN 1 ELSE 0 END) as makes
+      FROM kicks WHERE athlete_id = ?
+      GROUP BY hash ORDER BY hash
+    `).all(athleteId) as { hash: string; attempts: number; makes: number }[];
+
+    // Miss breakdown
+    const missBreakdown = db.prepare(`
+      SELECT miss_type, COUNT(*) as count
+      FROM kicks WHERE athlete_id = ? AND miss_type IS NOT NULL
+      GROUP BY miss_type ORDER BY count DESC
+    `).all(athleteId) as { miss_type: string; count: number }[];
+
+    const totalMisses = db.prepare(`
+      SELECT COUNT(*) as count FROM kicks WHERE athlete_id = ? AND result != 'made'
+    `).get(athleteId) as { count: number };
+
+    // Avg operation time
+    const avgOpTime = db.prepare(`
+      SELECT AVG(operation_time_ms) as avg_ms FROM kicks WHERE athlete_id = ? AND operation_time_ms IS NOT NULL
+    `).get(athleteId) as { avg_ms: number | null };
+
+    // Session counts by type
+    const sessionCounts = db.prepare(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN type = 'game' THEN 1 ELSE 0 END) as game_sessions,
+        SUM(CASE WHEN type = 'practice' THEN 1 ELSE 0 END) as practice_sessions
+      FROM sessions WHERE athlete_id = ?
+    `).get(athleteId) as { total: number; game_sessions: number; practice_sessions: number };
+
+    // Practice vs game kicks
+    const gameKicks = db.prepare(`
+      SELECT COUNT(*) as attempts, SUM(CASE WHEN k.result = 'made' THEN 1 ELSE 0 END) as makes
+      FROM kicks k JOIN sessions s ON s.id = k.session_id
+      WHERE k.athlete_id = ? AND s.type = 'game'
+    `).get(athleteId) as { attempts: number; makes: number };
+
+    const practiceKicks = db.prepare(`
+      SELECT COUNT(*) as attempts, SUM(CASE WHEN k.result = 'made' THEN 1 ELSE 0 END) as makes
+      FROM kicks k JOIN sessions s ON s.id = k.session_id
+      WHERE k.athlete_id = ? AND s.type = 'practice'
+    `).get(athleteId) as { attempts: number; makes: number };
+
+    return json({
+      athlete_name: `${athlete.first_name} ${athlete.last_name}`,
+      team_name: athlete.team_name,
+      season_attempts: seasonStats.attempts,
+      season_makes: seasonStats.makes,
+      season_fg_pct: seasonStats.attempts > 0 ? Math.round((seasonStats.makes / seasonStats.attempts) * 100) : 0,
+      by_distance: byDistance.map(d => ({
+        distance: d.distance,
+        attempts: d.attempts,
+        makes: d.makes,
+        pct: d.attempts > 0 ? Math.round((d.makes / d.attempts) * 100) : 0,
+      })),
+      by_hash: byHash.map(h => ({
+        hash: h.hash,
+        attempts: h.attempts,
+        makes: h.makes,
+        pct: h.attempts > 0 ? Math.round((h.makes / h.attempts) * 100) : 0,
+      })),
+      miss_breakdown: missBreakdown.map(m => ({
+        type: m.miss_type,
+        count: m.count,
+        pct: totalMisses.count > 0 ? Math.round((m.count / totalMisses.count) * 100) : 0,
+      })),
+      avg_operation_time_ms: avgOpTime.avg_ms ? Math.round(avgOpTime.avg_ms) : null,
+      total_sessions: sessionCounts.total,
+      game_kicks: gameKicks.attempts,
+      game_makes: gameKicks.makes,
+      practice_kicks: practiceKicks.attempts,
+      practice_makes: practiceKicks.makes,
     });
   }
 
