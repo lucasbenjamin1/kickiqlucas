@@ -254,12 +254,13 @@ export default function Record() {
         method: 'PATCH',
         body: JSON.stringify({ ended_at: new Date().toISOString() }),
       });
+      const finishedSessionId = activeSession.id;
       setActiveSessionId(null);
       setActiveSession(null);
       setShowFinishConfirm(false);
 
-      // Navigate to sessions list
-      navigate('/sessions');
+      // Navigate to session summary
+      navigate(`/sessions/${finishedSessionId}`);
     } catch (e) {
       setFeedback(e instanceof ApiError ? e.message : 'Failed to finish session');
       setShowFinishConfirm(false);

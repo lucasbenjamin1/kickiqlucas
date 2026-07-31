@@ -126,13 +126,11 @@ export default function Sessions() {
           <button
             key={session.id}
             onClick={() => {
-              // If session is active (no ended_at), go to record
               if (!session.ended_at) {
                 sessionStorage.setItem('kickiq_active_session', session.id);
                 navigate('/record');
               } else {
-                // Placeholder — will navigate to session summary later
-                navigate(`/record`);
+                navigate(`/sessions/${session.id}`);
               }
             }}
             className="card w-full text-left hover:border-gray-300 transition-colors active:bg-gray-50"
