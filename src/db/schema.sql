@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
   athlete_id TEXT NOT NULL REFERENCES athletes(id) ON DELETE CASCADE,
-  type TEXT NOT NULL CHECK(type IN ('practice', 'game')),
+  type TEXT NOT NULL CHECK(type IN ('practice', 'game', 'pregame', 'scrimmage', 'tryout', 'camp', 'other')),
   notes TEXT,
   started_at TEXT NOT NULL,
   ended_at TEXT,
@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS kicks (
   miss_type TEXT CHECK(miss_type IN ('short', 'wide_left', 'wide_right', 'crossbar', 'blocked', NULL)),
   landing_zone TEXT CHECK(landing_zone IN ('goalpost', 'left', 'right', 'short', NULL)),
   operation_time_ms INTEGER,
+  notes TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
