@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS athletes (
   first_name TEXT NOT NULL,
   last_name TEXT NOT NULL,
   number TEXT,
+  class_year TEXT,
+  dominant_foot TEXT CHECK(dominant_foot IN ('left', 'right') OR dominant_foot IS NULL),
+  height TEXT,
+  weight TEXT,
+  photo_url TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

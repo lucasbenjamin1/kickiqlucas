@@ -30,13 +30,13 @@ db.exec('DELETE FROM users');
 db.exec('DELETE FROM teams');
 
 const insertTeam = db.prepare('INSERT INTO teams (id, name) VALUES (?, ?)');
-const insertAthlete = db.prepare('INSERT INTO athletes (id, team_id, first_name, last_name, number) VALUES (?, ?, ?, ?, ?)');
+const insertAthlete = db.prepare('INSERT INTO athletes (id, team_id, first_name, last_name, number, class_year, dominant_foot, height, weight, photo_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
 const insertSession = db.prepare('INSERT INTO sessions (id, team_id, athlete_id, type, notes, started_at, ended_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
 const insertKick = db.prepare('INSERT INTO kicks (id, session_id, athlete_id, distance, hash, result, miss_type, landing_zone, operation_time_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
 
 insertTeam.run(teamId, 'Demo University');
 
-insertAthlete.run(athleteId, teamId, 'Demo', 'Kicker', '99');
+insertAthlete.run(athleteId, teamId, 'Demo', 'Kicker', '99', 'Junior', 'right', "6'2\"", '195', null);
 
 insertSession.run(sessionId, teamId, athleteId, 'practice', 'Demo practice session', '2026-07-30T14:00:00Z', '2026-07-30T14:45:00Z');
 
