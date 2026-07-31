@@ -605,6 +605,147 @@ async function handleApiRequest(req: Request, url: URL): Promise<Response> {
     return json({ deleted: kickId });
   }
 
+  // POST /api/sessions/:id/kicks/bulk — save multiple kicks at once
+  const kicksBulkMatch = path.match(/^\/api\/sessions\/([a-f0-9-]+)\/kicks\/bulk$/);
+  if (kicksBulkMatch && method === 'POST') {
+    const { payload, error: err } = await requireAuth(req);
+    if (err) return err;
+
+    const sessionId = kicksBulkMatch[1];
+    const db = getDb();
+
+    const session = db.prepare('SELECT * FROM sessions WHERE id = ?')
+      .get(sessionId) as Record<string, unknown> | undefined;
+
+    if (!session) return error('Session not found', 404);
+    if (payload.team_id !== session.team_id && payload.role !== 'admin') {
+      return error('Forbidden', 403);
+    }
+
+    const body = await req.json() as {
+      kicks?: Array<{
+        distance?: number;
+        hash?: string;
+        result?: string;
+        miss_type?: string | null;
+        landing_zone?: string | null;
+        operation_time_ms?: number | null;
+        notes?: string | null;
+        source_type?: string;
+      }>;
+    };
+
+    if (!body.kicks || !Array.isArray(body.kicks) || body.kicks.length === 0) {
+      return error('kicks array is required and must not be empty');
+    }
+
+    const validHashes = ['left_hash', 'left_middle', 'middle', 'right_middle', 'right_hash'];
+    const validResults = ['made', 'missed', 'blocked'];
+    const validMissTypes = ['short', 'wide_left', 'wide_right', 'crossbar', 'blocked', null];
+    const validLandingZones = ['goalpost', 'left', 'right', 'short', null];
+    const validSourceTypes = ['mobile', 'desktop', 'grid', 'paper'];
+
+    const athleteId = session.athlete_id as string;
+    const insertStmt = db.prepare(`
+      INSERT INTO kicks (id, session_id, athlete_id, distance, hash, result, miss_type, landing_zone, operation_time_ms, notes, source_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const savedIds: string[] = [];
+
+    // Use a transaction for bulk insert — clear existing paper-sourced kicks first
+    const insertAll = db.transaction(() => {
+      // Delete existing kicks from 'paper' source for this session (re-save idempotency)
+      db.prepare("DELETE FROM kicks WHERE session_id = ? AND source_type = 'paper'").run(sessionId);
+
+      for (const kick of body.kicks!) {
+        if (!kick.distance || !kick.hash || !kick.result) continue;
+        if (!validHashes.includes(kick.hash)) continue;
+        if (!validResults.includes(kick.result)) continue;
+        if (kick.miss_type && !validMissTypes.includes(kick.miss_type)) continue;
+        if (kick.landing_zone && !validLandingZones.includes(kick.landing_zone)) continue;
+
+        const sourceType = kick.source_type && validSourceTypes.includes(kick.source_type)
+          ? kick.source_type : 'mobile';
+
+        const id = randomUUID();
+        insertStmt.run(
+          id, sessionId, athleteId,
+          kick.distance, kick.hash, kick.result,
+          kick.miss_type || null,
+          kick.landing_zone || null,
+          kick.operation_time_ms || null,
+          kick.notes || null,
+          sourceType,
+        );
+        savedIds.push(id);
+      }
+    });
+
+    insertAll();
+
+    return json({ saved: savedIds.length, ids: savedIds }, 201);
+  }
+
+  // POST /api/sessions/:id/photo — upload sheet photo
+  const photoUploadMatch = path.match(/^\/api\/sessions\/([a-f0-9-]+)\/photo$/);
+  if (photoUploadMatch && method === 'POST') {
+    const { payload, error: err } = await requireAuth(req);
+    if (err) return err;
+
+    const sessionId = photoUploadMatch[1];
+    const db = getDb();
+
+    const session = db.prepare('SELECT * FROM sessions WHERE id = ?')
+      .get(sessionId) as Record<string, unknown> | undefined;
+
+    if (!session) return error('Session not found', 404);
+    if (payload.team_id !== session.team_id && payload.role !== 'admin') {
+      return error('Forbidden', 403);
+    }
+
+    const body = await req.json() as { photo?: string };
+    if (!body.photo) return error('photo (base64 data URL) is required');
+
+    // Validate it looks like a data URL
+    if (!body.photo.startsWith('data:image/')) {
+      return error('photo must be a base64 data URL starting with data:image/');
+    }
+
+    // Limit to ~10MB base64 (about 13.6M chars)
+    if (body.photo.length > 14_000_000) {
+      return error('Photo too large. Maximum 10MB.');
+    }
+
+    db.prepare('UPDATE sessions SET sheet_photo = ? WHERE id = ?').run(body.photo, sessionId);
+
+    return json({ uploaded: true });
+  }
+
+  // GET /api/sessions/:id/photo — retrieve sheet photo
+  const photoGetMatch = path.match(/^\/api\/sessions\/([a-f0-9-]+)\/photo$/);
+  if (photoGetMatch && method === 'GET') {
+    const { payload, error: err } = await requireAuth(req);
+    if (err) return err;
+
+    const sessionId = photoGetMatch[1];
+    const db = getDb();
+
+    const session = db.prepare('SELECT sheet_photo FROM sessions WHERE id = ?')
+      .get(sessionId) as { sheet_photo: string | null } | undefined;
+
+    if (!session) return error('Session not found', 404);
+
+    // Check team access
+    const sessionFull = db.prepare('SELECT team_id FROM sessions WHERE id = ?')
+      .get(sessionId) as { team_id: string } | undefined;
+    if (!sessionFull || (payload.team_id !== sessionFull.team_id && payload.role !== 'admin')) {
+      return error('Forbidden', 403);
+    }
+
+    return json({ photo: session.sheet_photo });
+  }
+
   // === STATS ROUTES ===
 
   // GET /api/stats/dashboard — pre-computed dashboard stats

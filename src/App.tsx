@@ -11,6 +11,8 @@ import Athletes from './pages/Athletes';
 import AthleteProfile from './pages/AthleteProfile';
 import Settings from './pages/Settings';
 import PrintSheet from './pages/PrintSheet';
+import SheetUpload from './pages/SheetUpload';
+import SheetEntry from './pages/SheetEntry';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 
@@ -42,6 +44,20 @@ export default function App() {
         <Route path="/sheets/print" element={
           <ProtectedRoute>
             <PrintSheet />
+          </ProtectedRoute>
+        } />
+
+        {/* Sheet upload — fullscreen, no Layout chrome */}
+        <Route path="/sheets/upload" element={
+          <ProtectedRoute>
+            <SheetUpload />
+          </ProtectedRoute>
+        } />
+
+        {/* Sheet data entry — fullscreen, no Layout chrome */}
+        <Route path="/sheets/entry/:id" element={
+          <ProtectedRoute>
+            <SheetEntry />
           </ProtectedRoute>
         } />
       </Routes>
