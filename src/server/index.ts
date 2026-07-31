@@ -381,6 +381,230 @@ async function handleApiRequest(req: Request, url: URL): Promise<Response> {
     return json(athlete);
   }
 
+  // === SESSION ROUTES ===
+
+  // GET /api/sessions — list recent sessions for user's team
+  if (path === '/api/sessions' && method === 'GET') {
+    const { payload, error: err } = await requireAuth(req);
+    if (err) return err;
+    if (!payload.team_id) return error('No team assigned', 400);
+
+    const db = getDb();
+    const sessions = db.prepare(`
+      SELECT s.id, s.type, s.notes, s.started_at, s.ended_at, s.athlete_id,
+        a.first_name, a.last_name, a.number,
+        COUNT(k.id) as kick_count,
+        SUM(CASE WHEN k.result = 'made' THEN 1 ELSE 0 END) as makes
+      FROM sessions s
+      JOIN athletes a ON a.id = s.athlete_id
+      LEFT JOIN kicks k ON k.session_id = s.id
+      WHERE s.team_id = ?
+      GROUP BY s.id
+      ORDER BY s.started_at DESC
+      LIMIT 50
+    `).all(payload.team_id) as Record<string, unknown>[];
+
+    return json(sessions);
+  }
+
+  // POST /api/sessions — create session
+  if (path === '/api/sessions' && method === 'POST') {
+    const { payload, error: err } = await requireAuth(req);
+    if (err) return err;
+    if (!payload.team_id) return error('No team assigned', 400);
+
+    const body = await req.json() as {
+      athlete_id?: string;
+      type?: string;
+      notes?: string;
+    };
+
+    if (!body.athlete_id) return error('athlete_id is required');
+    if (!body.type) return error('type is required');
+
+    const validTypes = ['practice', 'game', 'pregame', 'scrimmage', 'tryout', 'camp', 'other'];
+    if (!validTypes.includes(body.type)) {
+      return error(`Invalid session type. Must be one of: ${validTypes.join(', ')}`);
+    }
+
+    const db = getDb();
+
+    // Verify athlete belongs to user's team
+    const athlete = db.prepare('SELECT id FROM athletes WHERE id = ? AND team_id = ?')
+      .get(body.athlete_id, payload.team_id) as Record<string, unknown> | undefined;
+    if (!athlete) return error('Athlete not found or not in your team', 404);
+
+    const id = randomUUID();
+    const now = new Date().toISOString();
+
+    db.prepare(`
+      INSERT INTO sessions (id, team_id, athlete_id, type, notes, started_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, payload.team_id, body.athlete_id, body.type, body.notes?.trim() || null, now);
+
+    const session = db.prepare(`
+      SELECT s.*, a.first_name, a.last_name, a.number
+      FROM sessions s
+      JOIN athletes a ON a.id = s.athlete_id
+      WHERE s.id = ?
+    `).get(id) as Record<string, unknown>;
+
+    return json(session, 201);
+  }
+
+  // GET /api/sessions/:id — get session with kick count and kicks
+  const sessionDetailMatch = path.match(/^\/api\/sessions\/([a-f0-9-]+)$/);
+  if (sessionDetailMatch && method === 'GET') {
+    const { payload, error: err } = await requireAuth(req);
+    if (err) return err;
+
+    const sessionId = sessionDetailMatch[1];
+    const db = getDb();
+
+    const session = db.prepare(`
+      SELECT s.*, a.first_name, a.last_name, a.number
+      FROM sessions s
+      JOIN athletes a ON a.id = s.athlete_id
+      WHERE s.id = ?
+    `).get(sessionId) as Record<string, unknown> | undefined;
+
+    if (!session) return error('Session not found', 404);
+    if (payload.team_id !== session.team_id && payload.role !== 'admin') {
+      return error('Forbidden', 403);
+    }
+
+    const kickCount = db.prepare('SELECT COUNT(*) as count FROM kicks WHERE session_id = ?')
+      .get(sessionId) as { count: number };
+
+    const kicks = db.prepare('SELECT * FROM kicks WHERE session_id = ? ORDER BY created_at ASC')
+      .all(sessionId) as Record<string, unknown>[];
+
+    return json({ ...session, kick_count: kickCount.count, kicks });
+  }
+
+  // PATCH /api/sessions/:id — end session (set ended_at)
+  const sessionPatchMatch = path.match(/^\/api\/sessions\/([a-f0-9-]+)$/);
+  if (sessionPatchMatch && method === 'PATCH') {
+    const { payload, error: err } = await requireAuth(req);
+    if (err) return err;
+
+    const sessionId = sessionPatchMatch[1];
+    const db = getDb();
+
+    const session = db.prepare('SELECT * FROM sessions WHERE id = ?')
+      .get(sessionId) as Record<string, unknown> | undefined;
+
+    if (!session) return error('Session not found', 404);
+    if (payload.team_id !== session.team_id && payload.role !== 'admin') {
+      return error('Forbidden', 403);
+    }
+
+    const body = await req.json() as { ended_at?: string };
+    const endedAt = body.ended_at || new Date().toISOString();
+
+    db.prepare('UPDATE sessions SET ended_at = ? WHERE id = ?').run(endedAt, sessionId);
+
+    const updated = db.prepare(`
+      SELECT s.*, a.first_name, a.last_name, a.number
+      FROM sessions s
+      JOIN athletes a ON a.id = s.athlete_id
+      WHERE s.id = ?
+    `).get(sessionId) as Record<string, unknown>;
+
+    return json(updated);
+  }
+
+  // === KICK ROUTES ===
+
+  // POST /api/sessions/:id/kicks — add kick
+  const kicksAddMatch = path.match(/^\/api\/sessions\/([a-f0-9-]+)\/kicks$/);
+  if (kicksAddMatch && method === 'POST') {
+    const { payload, error: err } = await requireAuth(req);
+    if (err) return err;
+
+    const sessionId = kicksAddMatch[1];
+    const db = getDb();
+
+    const session = db.prepare('SELECT * FROM sessions WHERE id = ?')
+      .get(sessionId) as Record<string, unknown> | undefined;
+
+    if (!session) return error('Session not found', 404);
+    if (payload.team_id !== session.team_id && payload.role !== 'admin') {
+      return error('Forbidden', 403);
+    }
+
+    const body = await req.json() as {
+      distance?: number;
+      hash?: string;
+      result?: string;
+      miss_type?: string | null;
+      landing_zone?: string | null;
+      operation_time_ms?: number | null;
+      notes?: string | null;
+    };
+
+    if (!body.distance || !body.hash || !body.result) {
+      return error('distance, hash, and result are required');
+    }
+
+    const validHashes = ['left', 'center', 'right'];
+    const validResults = ['made', 'missed', 'blocked'];
+    const validMissTypes = ['short', 'wide_left', 'wide_right', 'crossbar', 'blocked', null];
+    const validLandingZones = ['goalpost', 'left', 'right', 'short', null];
+
+    if (!validHashes.includes(body.hash)) return error('Invalid hash');
+    if (!validResults.includes(body.result)) return error('Invalid result');
+    if (body.miss_type && !validMissTypes.includes(body.miss_type)) return error('Invalid miss_type');
+    if (body.landing_zone && !validLandingZones.includes(body.landing_zone)) return error('Invalid landing_zone');
+
+    const id = randomUUID();
+
+    const athleteId = session.athlete_id as string;
+
+    db.prepare(`
+      INSERT INTO kicks (id, session_id, athlete_id, distance, hash, result, miss_type, landing_zone, operation_time_ms, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id, sessionId, athleteId,
+      body.distance, body.hash, body.result,
+      body.miss_type || null,
+      body.landing_zone || null,
+      body.operation_time_ms || null,
+      body.notes || null,
+    );
+
+    const kick = db.prepare('SELECT * FROM kicks WHERE id = ?').get(id) as Record<string, unknown>;
+    return json(kick, 201);
+  }
+
+  // DELETE /api/sessions/:id/kicks/:kickId — undo kick
+  const kickDeleteMatch = path.match(/^\/api\/sessions\/([a-f0-9-]+)\/kicks\/([a-f0-9-]+)$/);
+  if (kickDeleteMatch && method === 'DELETE') {
+    const { payload, error: err } = await requireAuth(req);
+    if (err) return err;
+
+    const sessionId = kickDeleteMatch[1];
+    const kickId = kickDeleteMatch[2];
+    const db = getDb();
+
+    const session = db.prepare('SELECT * FROM sessions WHERE id = ?')
+      .get(sessionId) as Record<string, unknown> | undefined;
+
+    if (!session) return error('Session not found', 404);
+    if (payload.team_id !== session.team_id && payload.role !== 'admin') {
+      return error('Forbidden', 403);
+    }
+
+    const kick = db.prepare('SELECT * FROM kicks WHERE id = ? AND session_id = ?')
+      .get(kickId, sessionId) as Record<string, unknown> | undefined;
+
+    if (!kick) return error('Kick not found', 404);
+
+    db.prepare('DELETE FROM kicks WHERE id = ?').run(kickId);
+
+    return json({ deleted: kickId });
+  }
+
   return error('Not found', 404);
 }
 

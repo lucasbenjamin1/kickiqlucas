@@ -16,5 +16,19 @@ db.run('PRAGMA foreign_keys = ON');
 const schema = fs.readFileSync(path.resolve(import.meta.dirname || '.', 'schema.sql'), 'utf-8');
 db.exec(schema);
 
+// Add columns that may have been added to the schema after initial creation
+const migrations = [
+  // Add notes column to kicks if it doesn't exist
+  `ALTER TABLE kicks ADD COLUMN notes TEXT`,
+];
+
+for (const migration of migrations) {
+  try {
+    db.exec(migration);
+  } catch {
+    // Column likely already exists — ignore
+  }
+}
+
 console.log('Migration complete.');
 db.close();
