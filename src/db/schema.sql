@@ -47,3 +47,14 @@ CREATE INDEX IF NOT EXISTS idx_sessions_athlete ON sessions(athlete_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_team ON sessions(team_id);
 CREATE INDEX IF NOT EXISTS idx_kicks_session ON kicks(session_id);
 CREATE INDEX IF NOT EXISTS idx_kicks_athlete ON kicks(athlete_id);
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'coach' CHECK(role IN ('admin', 'coach', 'kicker', 'viewer')),
+  team_id TEXT REFERENCES teams(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_team ON users(team_id);
