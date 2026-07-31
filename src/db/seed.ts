@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
@@ -11,8 +11,8 @@ if (!fs.existsSync(dir)) {
 }
 
 const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+db.run('PRAGMA journal_mode = WAL');
+db.run('PRAGMA foreign_keys = ON');
 
 // Create schema if not exists
 const schema = fs.readFileSync(path.resolve(import.meta.dirname || '.', 'schema.sql'), 'utf-8');
@@ -26,6 +26,7 @@ const sessionId = randomUUID();
 db.exec('DELETE FROM kicks');
 db.exec('DELETE FROM sessions');
 db.exec('DELETE FROM athletes');
+db.exec('DELETE FROM users');
 db.exec('DELETE FROM teams');
 
 const insertTeam = db.prepare('INSERT INTO teams (id, name) VALUES (?, ?)');
@@ -86,4 +87,11 @@ for (const k of gameKicks) {
 }
 
 console.log(`Seed complete: ${110 + gameKicks.length} kicks for "${teamId}"`);
+
+// Seed demo user: coach@kickiq.com / password123
+const demoPasswordHash = Bun.password.hashSync('password123', { algorithm: 'bcrypt', cost: 10 });
+db.prepare('INSERT INTO users (id, email, password_hash, name, role, team_id) VALUES (?, ?, ?, ?, ?, ?)')
+  .run(randomUUID(), 'coach@kickiq.com', demoPasswordHash, 'Demo Coach', 'coach', teamId);
+console.log('Demo user seeded: coach@kickiq.com / password123');
+
 db.close();
